@@ -133,6 +133,60 @@ exports.cancelOrder = catchAsync(async (req, res, next) => {
   }
 });
 
+exports.updateOrderStatus = catchAsync(async (req, res, next) => {
+  const { status } = req.body;
+
+  const allowedStatuses = ["processing", "shipped", "delivered", "cancelled"];
+
+  if (!allowedStatuses.includes(status)) {
+    return next(new AppError("Invalid order status!", 400));
+  }
+
+  const order = await Order.findById(req.params.orderId);
+
+  if (!order) {
+    return next(new AppError("Order not found", 404));
+  }
+
+  if (order.orderStatus === "cancelled") {
+    return next(new AppError("A cancelled order cannot be updated!", 400));
+  }
+
+  if (order.orderStatus === "delivered") {
+    return next(new AppError("A delivered order cannot be updated!", 400));
+  }
+
+  if (status === "cancelled") {
+    return next(
+      new AppError("Use the cancel order end point to cancel the oder ", 400),
+    );
+  }
+
+  const validTransitions = {
+    processing: ["shipped"],
+    shipped: ["delivered"],
+    delivered: [],
+    cancelled: [],
+  };
+
+  if (!validTransitions[order.orderStatus].includes(status)) {
+    return next(
+      new AppError(
+        `Cannot change order status from ${order.orderStatus} to ${status}`,
+        400,
+      ),
+    );
+  }
+
+  order.orderStatus = status;
+  await order.save();
+
+  res.status(200).json({
+    status: "success",
+    data: { order },
+  });
+});
+
 exports.getMyOrders = catchAsync(async (req, res) => {
   const orders = await Order.find({ user: req.user._id }).populate(
     "user items.product",
@@ -149,18 +203,5 @@ exports.getAllOrders = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: "success",
     data: { orders },
-  });
-});
-
-exports.updateOrderStatus = catchAsync(async (req, res, next) => {
-  const order = await Order.findById(req.params.orderId);
-  if (!order) return next(new AppError("Order not found", 404));
-
-  order.orderStatus = req.body.status;
-  await order.save();
-
-  res.status(200).json({
-    status: "success",
-    data: { order },
   });
 });
