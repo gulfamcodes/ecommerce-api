@@ -187,6 +187,37 @@ exports.updateOrderStatus = catchAsync(async (req, res, next) => {
   });
 });
 
+exports.updatePaymentStatus = catchAsync(async (req, res, next) => {
+  const { status } = req.body;
+
+  const allowedStatuses = ["paid", "pending"];
+
+  if (!allowedStatuses.includes(status)) {
+    return next(new AppError("Invalid payment status", 400));
+  }
+
+  const order = await Order.findById(req.params.orderId);
+
+  if (!order) {
+    return next(new AppError("Order not found", 404));
+  }
+
+  if (order.paymentStatus === "paid" && status === "pending") {
+    return next(
+      new AppError("A paid order cannot changed back to pending", 400),
+    );
+  }
+
+  order.paymentStatus = status;
+
+  await order.save();
+
+  res.status(200).json({
+    status: "success",
+    data: { order },
+  });
+});
+
 exports.getMyOrders = catchAsync(async (req, res) => {
   const orders = await Order.find({ user: req.user._id }).populate(
     "user items.product",
