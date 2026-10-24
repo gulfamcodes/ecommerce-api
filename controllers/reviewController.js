@@ -1,7 +1,33 @@
 const Review = require("../models/reviewModel");
 const Order = require("../models/orderModel");
+const Product = require("../models/productModel");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/appError");
+
+const updateProductRating = async (productId) => {
+  const ratingStats = await Review.aggregate([
+    { $match: { product: productId } },
+    {
+      $group: {
+        _id: "$product",
+        averageRating: { $avg: "$rating" },
+        numberOfRatings: { $sum: 1 },
+      },
+    },
+  ]);
+
+  if (ratingStats.length > 0) {
+    await Product.findByIdAndUpdate(productId, {
+      ratingsAverage: ratingStats[0].averageRating,
+      ratingsQuantity: ratingStats[0].numberOfRatings,
+    });
+  } else {
+    await Product.findByIdAndUpdate(productId, {
+      ratingsAverage: 0,
+      ratingsQuantity: 0,
+    });
+  }
+};
 
 exports.addReview = catchAsync(async (req, res, next) => {
   const { product, rating, comment } = req.body;
@@ -45,6 +71,8 @@ exports.addReview = catchAsync(async (req, res, next) => {
     comment,
   });
 
+  await updateProductRating(product);
+
   res.status(201).json({
     status: "success",
     data: { review },
@@ -60,6 +88,8 @@ exports.updateReview = catchAsync(async (req, res, next) => {
 
   if (!review) return next(new AppError("Review not found or not yours", 404));
 
+  await updateProductRating(review.product);
+
   res.status(200).json({
     status: "success",
     data: { review },
@@ -73,6 +103,8 @@ exports.deleteReview = catchAsync(async (req, res, next) => {
   });
 
   if (!review) return next(new AppError("Review not found or not yours", 404));
+
+  await updateProductRating(review.product);
 
   res.status(200).json({
     status: "success",
