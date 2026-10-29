@@ -6,6 +6,7 @@ const {
   updateOrderStatus,
   cancelOrder,
   updatePaymentStatus,
+  getMyOrder,
 } = require("../controllers/orderController");
 const { protect, restrictTo } = require("../middlewares/authMiddleware");
 
@@ -15,6 +16,7 @@ router.use(protect);
 
 router.route("/").post(createOrder).get(getMyOrders);
 router.route("/all").get(restrictTo("admin"), getAllOrders);
+router.route("/:orderId").get(getMyOrder);
 
 router
   .route("/:orderId/payment")

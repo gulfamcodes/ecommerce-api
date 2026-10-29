@@ -57,6 +57,7 @@ exports.createOrder = catchAsync(async (req, res, next) => {
             items: cart.items.map((item) => ({
               product: item.product._id,
               quantity: item.quantity,
+              price: item.product.price,
             })),
             totalAmount,
           },
@@ -156,6 +157,12 @@ exports.updateOrderStatus = catchAsync(async (req, res, next) => {
     return next(new AppError("A delivered order cannot be updated!", 400));
   }
 
+  if (status === "shipped" && order.paymentStatus !== "paid") {
+    return next(
+      new AppError("An order must be paid before it can be shipped.", 400),
+    );
+  }
+
   if (status === "cancelled") {
     return next(
       new AppError("Use the cancel order end point to cancel the oder ", 400),
@@ -202,6 +209,20 @@ exports.updatePaymentStatus = catchAsync(async (req, res, next) => {
     return next(new AppError("Order not found", 404));
   }
 
+  if (order.orderStatus === "delivered") {
+    return next(
+      new AppError(
+        "A delivered order cannot have its payment status changed",
+        400,
+      ),
+    );
+  }
+  if (order.orderStatus === "cancelled" && status === "paid") {
+    return next(
+      new AppError("A cancelled order cannot be marked as paid!", 400),
+    );
+  }
+
   if (order.paymentStatus === "paid" && status === "pending") {
     return next(
       new AppError("A paid order cannot changed back to pending", 400),
@@ -219,20 +240,79 @@ exports.updatePaymentStatus = catchAsync(async (req, res, next) => {
 });
 
 exports.getMyOrders = catchAsync(async (req, res) => {
-  const orders = await Order.find({ user: req.user._id }).populate(
-    "user items.product",
-  );
+  const filter = {
+    user: req.user._id,
+  };
+
+  if (req.query.status) {
+    filter.orderStatus = req.query.status;
+  }
+
+  if (req.query.paymentStatus) {
+    filter.paymentStatus = req.query.paymentStatus;
+  }
+
+  const orders = await Order.find(filter).populate("user items.product");
   res.status(200).json({
     status: "success",
     data: { orders },
   });
 });
 
-exports.getAllOrders = catchAsync(async (req, res, next) => {
-  const orders = await Order.find().populate("user items.product");
+exports.getMyOrder = catchAsync(async (req, res, next) => {
+  const order = await Order.findOne({
+    _id: req.params.orderId,
+    user: req.user._id,
+  }).populate("user items.product");
+
+  if (!order) {
+    return next(new AppError("Order not found", 404));
+  }
 
   res.status(200).json({
     status: "success",
+    data: { order },
+  });
+});
+exports.getAllOrders = catchAsync(async (req, res, next) => {
+  const filter = {};
+
+  if (req.query.status) {
+    filter.orderStatus = req.query.status;
+  }
+
+  if (req.query.paymentStatus) {
+    filter.paymentStatus = req.query.paymentStatus;
+  }
+
+  const page = Number(req.query.page ?? 1);
+  const requestedLimit = Number(req.query.limit ?? 10);
+
+  if (!Number.isInteger(page) || page < 1) {
+    return next(new AppError("Page must be a positive integer", 400));
+  }
+
+  if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
+    return next(new AppError("Limit must be a positive integer", 400));
+  }
+  const limit = Math.min(requestedLimit, 100);
+  const skip = (page - 1) * limit;
+
+  const totalOrders = await Order.countDocuments(filter);
+  const orders = await Order.find(filter)
+    .populate("user items.product")
+    .skip(skip)
+    .limit(limit);
+
+  res.status(200).json({
+    status: "success",
+    results: orders.length,
+    pagination: {
+      totalOrders,
+      currentPage: page,
+      totalPages: Math.ceil(totalOrders / limit),
+      limit,
+    },
     data: { orders },
   });
 });
