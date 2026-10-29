@@ -239,7 +239,7 @@ exports.updatePaymentStatus = catchAsync(async (req, res, next) => {
   });
 });
 
-exports.getMyOrders = catchAsync(async (req, res) => {
+exports.getMyOrders = catchAsync(async (req, res, next) => {
   const filter = {
     user: req.user._id,
   };
@@ -252,9 +252,36 @@ exports.getMyOrders = catchAsync(async (req, res) => {
     filter.paymentStatus = req.query.paymentStatus;
   }
 
-  const orders = await Order.find(filter).populate("user items.product");
+  const page = Number(req.query.page ?? 1);
+  const requestedLimit = Number(req.query.limit ?? 10);
+
+  if (!Number.isInteger(page) || page < 1) {
+    return next(new AppError("Page must be a positive integer", 400));
+  }
+
+  if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
+    return next(new AppError("Limit must be a positive integer", 400));
+  }
+
+  const limit = Math.min(requestedLimit, 100);
+  const skip = (page - 1) * limit;
+
+  const totalOrders = await Order.countDocuments(filter);
+
+  const orders = await Order.find(filter)
+    .populate("user items.product")
+    .skip(skip)
+    .limit(limit);
+
   res.status(200).json({
     status: "success",
+    results: orders.length,
+    pagination: {
+      totalOrders,
+      currentPage: page,
+      totalPages: Math.ceil(totalOrders / limit),
+      limit,
+    },
     data: { orders },
   });
 });
