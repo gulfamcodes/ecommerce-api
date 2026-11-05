@@ -2,13 +2,38 @@ const Cart = require("../models/cartModel");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/appError");
 const Product = require("../models/productModel");
+
 exports.getCart = catchAsync(async (req, res, next) => {
   const cart = await Cart.findOne({ user: req.user._id }).populate(
     "items.product",
+    "name price image countInStock isDeleted",
   );
+
+  if (!cart) {
+    return res.status(200).json({
+      status: "success",
+      data: { cart: null },
+    });
+  }
+
+  const items = cart.items.map((item) => ({
+    product: item.product,
+    quantity: item.quantity,
+    available:
+      item.product !== null &&
+      item.product.isDeleted !== true &&
+      item.product.countInStock >= item.quantity,
+  }));
+
   res.status(200).json({
     status: "success",
-    data: { cart },
+    data: {
+      cart: {
+        _id: cart._id,
+        user: cart.user,
+        items,
+      },
+    },
   });
 });
 
@@ -21,10 +46,13 @@ exports.addToCart = catchAsync(async (req, res, next) => {
   }
 
   // check whether product exists
-  const productExists = await Product.findById(product);
+  const productExists = await Product.findOne({
+    _id: product,
+    isDeleted: { $ne: true },
+  });
   if (!productExists) {
     return next(
-      new AppError("Product not found, Cannot add to the cart!", 404),
+      new AppError("Product not found, or no longer available!", 404),
     );
   }
 
@@ -89,10 +117,15 @@ exports.updateCartItem = catchAsync(async (req, res, next) => {
   );
   if (!item) return next(new AppError("Item not found", 404));
 
-  const product = Product.findOne(item.product);
+  const product = await Product.findOne({
+    _id: item.product,
+    isDeleted: { $ne: true },
+  });
 
   if (!product) {
-    return next(new AppError("Product not found", 404));
+    return next(
+      new AppError("Product not found, or no longer available!", 404),
+    );
   }
 
   if (quantity > product.countInStock) {

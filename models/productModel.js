@@ -31,8 +31,16 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
-  { timesStamps: true },
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Product", productSchema);

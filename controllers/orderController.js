@@ -19,11 +19,13 @@ exports.createOrder = catchAsync(async (req, res, next) => {
         throw new AppError("Cart is empty", 400);
       }
 
-      const totalAmount = cart.items.reduce((sum, item) => {
-        return sum + item.product.price * item.quantity;
-      }, 0);
-
       for (const item of cart.items) {
+        if (!item.product || item.product.isDeleted === true) {
+          throw new AppError(
+            "One or more products in your cart are no longer available.",
+            400,
+          );
+        }
         // validate all cart items before changing the stock
 
         if (!Number.isInteger(item.quantity) || item.quantity < 1) {
@@ -36,8 +38,13 @@ exports.createOrder = catchAsync(async (req, res, next) => {
             400,
           );
         }
+
         const updatedProduct = await Product.findOneAndUpdate(
-          { _id: item.product._id, countInStock: { $gte: item.quantity } },
+          {
+            _id: item.product._id,
+            isDeleted: { $ne: true },
+            countInStock: { $gte: item.quantity },
+          },
           { $inc: { countInStock: -item.quantity } },
           { new: true, session },
         );
@@ -49,6 +56,9 @@ exports.createOrder = catchAsync(async (req, res, next) => {
           );
         }
       }
+      const totalAmount = cart.items.reduce((sum, item) => {
+        return sum + item.product.price * item.quantity;
+      }, 0);
       // create orders after all stock checks and deductions
       const orders = await Order.create(
         [

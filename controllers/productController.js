@@ -14,6 +14,7 @@ exports.getAllProducts = catchAsync(async (req, res, next) => {
   );
 
   const filter = JSON.parse(operators);
+  filter.isDeleted = { $ne: true };
   const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\] /g, "\\$&");
   //implementing search feature
   if (req.query.search) {
@@ -62,6 +63,22 @@ exports.getAllProducts = catchAsync(async (req, res, next) => {
   });
 });
 
+exports.getProduct = catchAsync(async (req, res, next) => {
+  const product = await Product.findOne({
+    _id: req.params.id,
+    isDeleted: { $ne: true },
+  });
+
+  if (!product) {
+    return next(new AppError("Product not found", 404));
+  }
+
+  res.status(200).json({
+    status: "success",
+    data: { product },
+  });
+});
+
 exports.createProduct = catchAsync(async (req, res, next) => {
   const product = await Product.create(req.body);
   res.status(200).json({
@@ -71,10 +88,11 @@ exports.createProduct = catchAsync(async (req, res, next) => {
 });
 
 exports.updateProduct = catchAsync(async (req, res, next) => {
-  const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
+  const product = await Product.findOneAndUpdate(
+    { _id: req.params.id, isDeleted: { $ne: true } },
+    req.body,
+    { new: true, runValidators: true },
+  );
   if (!product) return next(new AppError("Product not found", 404));
   res.status(200).json({
     status: "success",
@@ -83,10 +101,21 @@ exports.updateProduct = catchAsync(async (req, res, next) => {
 });
 
 exports.deleteProduct = catchAsync(async (req, res, next) => {
-  const product = await Product.findByIdAndDelete(req.params.id);
+  const product = await Product.findById(req.params.id);
+
   if (!product) return next(new AppError("Product not found", 404));
+
+  if (product.isDeleted) {
+    return next(new AppError("The product is already deleted", 400));
+  }
+
+  product.isDeleted = true;
+  product.deletedAt = new Date();
+
+  await product.save();
+
   res.status(200).json({
     status: "success",
-    data: null,
+    message: "Product deleted successfully",
   });
 });
