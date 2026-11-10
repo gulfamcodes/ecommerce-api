@@ -9,6 +9,10 @@ const orderSchema = new mongoose.Schema(
     },
     items: [
       {
+        name: {
+          type: String,
+          required: false,
+        },
         product: {
           type: mongoose.Schema.ObjectId,
           ref: "Product",

@@ -65,6 +65,7 @@ exports.createOrder = catchAsync(async (req, res, next) => {
           {
             user: req.user._id,
             items: cart.items.map((item) => ({
+              name: item.product.name,
               product: item.product._id,
               quantity: item.quantity,
               price: item.product.price,

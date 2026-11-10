@@ -14,6 +14,7 @@ const router = express.Router();
 
 router.use(protect);
 
+router.route("/my-orders").get(getMyOrders);
 router.route("/").post(createOrder).get(getMyOrders);
 router.route("/all").get(restrictTo("admin"), getAllOrders);
 router.route("/:orderId").get(getMyOrder);
