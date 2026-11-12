@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const Order = require("../models/orderModel");
 const Cart = require("../models/cartModel");
 const Product = require("../models/productModel");
@@ -5,11 +6,67 @@ const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/appError");
 const mongoose = require("mongoose");
 
+const createRequestHash = (items) => {
+  const normalizedItems = items
+    .map((item) => ({
+      productId: String(item.product?._id || item.product),
+      quantity: item.quantity,
+    }))
+    .sort((a, b) => a.productId.localeCompare(b.productId));
+
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(normalizedItems))
+    .digest("hex");
+};
+
 exports.createOrder = catchAsync(async (req, res, next) => {
+  const idempotencyKey = req.get("Idempotency-key")?.trim();
+
+  // 1. validate idempotency key
+  if (
+    !idempotencyKey ||
+    idempotencyKey.length < 8 ||
+    idempotencyKey.length > 128
+  ) {
+    return next(
+      new AppError("A valid idempotency key header is required", 400),
+    );
+  }
+
+  // 2. check whether this checkout was already completed
+  const existingOrder = await Order.findOne({
+    user: req.user._id,
+    idempotencyKey,
+  });
+
+  if (existingOrder) {
+    const cart = await Cart.findOne({ user: req.user._id });
+
+    if (cart && cart.items.length > 0) {
+      const currentHash = createRequestHash(cart.items);
+
+      if (currentHash !== existingOrder.requestHash) {
+        return next(
+          new AppError(
+            "This idempotency key has already been used for different checkout",
+            409,
+          ),
+        );
+      }
+    }
+    return res.status(200).json({
+      status: "success",
+      data: { order: existingOrder },
+    });
+  }
+
+  //3. starting MongoDB transaction
   const session = await mongoose.startSession();
 
   try {
     let createdOrder;
+
     await session.withTransaction(async () => {
       const cart = await Cart.findOne({ user: req.user._id })
         .populate("items.product")
@@ -19,6 +76,7 @@ exports.createOrder = catchAsync(async (req, res, next) => {
         throw new AppError("Cart is empty", 400);
       }
 
+      // 4. validate all cart items before changing the stock
       for (const item of cart.items) {
         if (!item.product || item.product.isDeleted === true) {
           throw new AppError(
@@ -26,7 +84,6 @@ exports.createOrder = catchAsync(async (req, res, next) => {
             400,
           );
         }
-        // validate all cart items before changing the stock
 
         if (!Number.isInteger(item.quantity) || item.quantity < 1) {
           throw new AppError("Invalid quantity in cart", 400);
@@ -38,7 +95,14 @@ exports.createOrder = catchAsync(async (req, res, next) => {
             400,
           );
         }
+      }
 
+      // 5. generate fingerprint before checkout
+
+      const requestHash = createRequestHash(cart.items);
+
+      // 6. deduct stock after all items have passed validation
+      for (const item of cart.items) {
         const updatedProduct = await Product.findOneAndUpdate(
           {
             _id: item.product._id,
@@ -56,6 +120,7 @@ exports.createOrder = catchAsync(async (req, res, next) => {
           );
         }
       }
+
       const totalAmount = cart.items.reduce((sum, item) => {
         return sum + item.product.price * item.quantity;
       }, 0);
@@ -64,6 +129,8 @@ exports.createOrder = catchAsync(async (req, res, next) => {
         [
           {
             user: req.user._id,
+            idempotencyKey,
+            requestHash,
             items: cart.items.map((item) => ({
               name: item.product.name,
               product: item.product._id,
@@ -83,10 +150,41 @@ exports.createOrder = catchAsync(async (req, res, next) => {
       await cart.save({ session });
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       status: "success",
       data: { order: createdOrder },
     });
+  } catch (error) {
+    if (error.code === 11000) {
+      // handling concurrent request using same key
+      const duplicateOrConcurrentOrder = await Order.findOne({
+        user: req.user._id,
+        idempotencyKey,
+      });
+      if (duplicateOrConcurrentOrder) {
+        const cart = await Cart.findOne({
+          user: req.user._id,
+        });
+        if (cart && cart.items.length > 0) {
+          const currentHash = createRequestHash(cart.items);
+          if (currentHash !== duplicateOrConcurrentOrder.requestHash) {
+            return next(
+              new AppError(
+                "This idempotency key has already been used for different checkout",
+                409,
+              ),
+            );
+          }
+        }
+        return res.status(200).json({
+          status: "success",
+          data: {
+            order: duplicateOrConcurrentOrder,
+          },
+        });
+      }
+    }
+    throw error;
   } finally {
     await session.endSession();
   }
@@ -312,6 +410,7 @@ exports.getMyOrder = catchAsync(async (req, res, next) => {
     data: { order },
   });
 });
+
 exports.getAllOrders = catchAsync(async (req, res, next) => {
   const filter = {};
 

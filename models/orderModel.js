@@ -7,6 +7,14 @@ const orderSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    idempotencyKey: {
+      type: String,
+      required: false,
+    },
+    requestHash: {
+      type: String,
+      required: false,
+    },
     items: [
       {
         name: {
@@ -44,6 +52,16 @@ const orderSchema = new mongoose.Schema(
     },
   },
   { timestamps: true },
+);
+
+orderSchema.index(
+  { user: 1, idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      idempotencyKey: { $type: "string" },
+    },
+  },
 );
 
 module.exports = mongoose.model("Order", orderSchema);
