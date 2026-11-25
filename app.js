@@ -16,7 +16,7 @@ const app = express();
 // Middlewares
 app.use(helmet());
 app.use(morgan("dev"));
-app.use(express.json());
+app.use(express.json({ limit: "10kb" }));
 
 // Routes
 app.use("/api/v1/users", authRoutes);
