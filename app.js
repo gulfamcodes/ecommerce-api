@@ -1,5 +1,6 @@
 const express = require("express");
 const morgan = require("morgan");
+const helmet = require("helmet");
 const AppError = require("./utils/appError");
 const globalErrorHandler = require("./middlewares/errorHandler");
 
@@ -12,11 +13,12 @@ const reviewRoutes = require("./routes/reviewRoutes");
 
 const app = express();
 
-//Middlewares
+// Middlewares
+app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json());
 
-//Routes
+// Routes
 app.use("/api/v1/users", authRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/cart", cartRoutes);
@@ -27,12 +29,12 @@ app.get("/", (req, res) => {
   res.send("Ecommerce API test route");
 });
 
-//404 handler
+// 404 handler
 app.all("*", (req, res, next) => {
   next(new AppError(`Can't find ${req.originalUrl}`, 404));
 });
 
-//Global error handler
+// Global error handler
 app.use(globalErrorHandler);
 
 module.exports = app;
