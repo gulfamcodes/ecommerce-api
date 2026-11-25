@@ -1,4 +1,5 @@
 const express = require("express");
+const upload = require("../middlewares/uploadMiddleware");
 const {
   getAllProducts,
   createProduct,
@@ -13,12 +14,12 @@ const router = express.Router();
 router
   .route("/")
   .get(getAllProducts)
-  .post(protect, restrictTo("admin"), createProduct);
+  .post(protect, restrictTo("admin"), upload.single("image"), createProduct);
 
 router
   .route("/:id")
   .get(getProduct)
-  .patch(protect, restrictTo("admin"), updateProduct)
+  .patch(protect, restrictTo("admin"), upload.single("image"), updateProduct)
   .delete(protect, restrictTo("admin"), deleteProduct);
 
 module.exports = router;
