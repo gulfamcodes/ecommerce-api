@@ -1,4 +1,5 @@
 const AppError = require("../utils/appError");
+const multer = require("multer");
 
 const handleInvalidJSON = () => {
   return new AppError("Invalid JSON format in request body.", 400);
@@ -51,6 +52,12 @@ const handleCastErrorDB = () => {
 };
 
 module.exports = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      err = new AppError("File size must not exceed 5 MB", 413);
+    }
+  }
+
   if (err.type === "entity.parse.failed") {
     err = handleInvalidJSON();
   } else if (err.name === "JsonWebTokenError") {
